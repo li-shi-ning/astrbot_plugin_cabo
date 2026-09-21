@@ -191,3 +191,36 @@ def test_failed_match_discards_drawn_card_and_loses_turn() -> None:
     assert game.discard[-1].code == "5S"
     assert game.phase == CaboPhase.TURN
     assert game.current_player is not actor
+
+
+def test_matching_drawn_card_with_one_hand_card() -> None:
+    game = make_game()
+    actor = game.current_player
+    assert actor is not None
+    actor.cards = [card("5S"), card("2S"), card("3S"), card("4S")]
+    actor.known_positions = {0, 1}
+    game.drawn_card = card("5H")
+    game.phase = CaboPhase.DRAWN_STOCK
+
+    lines = game.match_with_drawn(actor.user_id, [1])
+
+    assert "配对成功" in lines[0]
+    assert [item.code for item in actor.cards] == ["2S", "3S", "4S"]
+    assert game.discard[-2:] == [card("5S"), card("5H")]
+    assert actor.known_positions == {0}
+
+
+def test_matching_drawn_card_with_two_hand_cards_makes_triple() -> None:
+    game = make_game()
+    actor = game.current_player
+    assert actor is not None
+    actor.cards = [card("5S"), card("5H"), card("3S"), card("4S")]
+    actor.known_positions = {0, 1}
+    game.drawn_card = card("5D")
+    game.phase = CaboPhase.DRAWN_STOCK
+
+    lines = game.match_with_drawn(actor.user_id, [1, 2])
+
+    assert "配对成功" in lines[0]
+    assert [item.code for item in actor.cards] == ["3S", "4S"]
+    assert game.discard[-3:] == [card("5S"), card("5H"), card("5D")]

@@ -353,8 +353,8 @@ class CaboPlugin(Star):
         if game is None:
             raise CaboError("当前没有 CABO 房间。")
         positions = self._parse_numbers(text)
-        if len(positions) < 2:
-            raise CaboError("格式错误，请发送“配对 1 2”或“配对 1 2 3”。")
+        if not 1 <= len(positions) <= 4:
+            raise CaboError("格式错误，请发送“配对 1”或“配对 1 2”。")
         return self._action_outcome(group_id, game.match_with_drawn(user_id, positions))
 
     def _peek(self, group_id: str, user_id: str, text: str) -> CommandOutcome:
@@ -449,12 +449,12 @@ class CaboPlugin(Star):
             "1. 每人 4 张暗牌，开局自动知道第 1、2 张。\n"
             "2. 轮到你时抽牌堆或拿弃牌，或直接喊 CABO。\n"
             "3. 抽牌后可替换自己任意一张牌；拿弃牌必须替换。\n"
-            "4. 抽牌后可选择 2-4 张同点数牌配对：用抽到的牌替换整组，手牌减少。\n"
+            "4. 配对：抽到的牌可以和手中同点数牌一起弃掉；也可以让抽到的牌替换 2-4 张同点数手牌。\n"
             "5. 7/8 看自己，9/10 看别人，J/Q 交换任意两张桌上牌。\n"
             "6. 喊 CABO 后其他玩家各获得最后一回合，随后摊牌。\n"
             "7. 点数最低者获胜。K♦=0，其他 K=13，Q=12，J=11，A=1。\n"
             "命令：CABO创建 / CABO加入 / CABO开始 / 抽牌 / 拿弃牌 / "
-            "换 1 / 配对 1 2 / 弃牌 / 看自己 1 / 看别人 2 3 / "
+            "换 1 / 配对 1 / 配对 1 2 / 弃牌 / 看自己 1 / 看别人 2 3 / "
             "交换 1 1 2 2 / CABO叫牌"
         )
         return CommandOutcome(text=text, buttons=self._menu_buttons())

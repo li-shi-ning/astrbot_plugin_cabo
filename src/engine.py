@@ -265,12 +265,13 @@ class CaboGame:
         return [f"{player.name} 弃掉了抽到的牌。"]
 
     def match_with_drawn(self, user_id: str, positions: list[int]) -> list[str]:
-        """Use the drawn/discard card to replace a set of 2-4 matching cards.
+        """Match the drawn card with 1-3 same-rank cards, or replace a set.
 
-        Matching removes the selected face-down set and places the drawn card
-        into the layout, reducing the hand by ``len(positions) - 1`` cards.  A
-        failed match reveals and returns the selected cards, discards the
-        drawn card, and loses the turn.
+        If the drawn card has the same rank as the selected cards, the drawn
+        card joins the match and the whole set is discarded.  Otherwise at
+        least two selected cards must match each other, and the drawn card
+        replaces that set.  A failed match reveals and returns the selected
+        cards, discards the drawn card, and loses the turn.
         """
 
         if self.phase not in {CaboPhase.DRAWN_STOCK, CaboPhase.DRAWN_DISCARD}:
@@ -278,14 +279,15 @@ class CaboGame:
         player = self.current_player
         if player is None or player.user_id != user_id:
             raise CaboError("还没有轮到你行动。")
-        if not 2 <= len(positions) <= 4:
-            raise CaboError("配对需要选择 2-4 张牌。")
+        if not 1 <= len(positions) <= 4:
+            raise CaboError("配对需要选择 1-4 张牌。")
         indices = [self._card_index(position, player) for position in positions]
         if len(set(indices)) != len(indices):
             raise CaboError("不能重复选择同一张牌。")
         selected = [player.cards[index] for index in indices]
         assert self.drawn_card is not None
-        if len({card.rank for card in selected}) != 1:
+        selected_ranks = {card.rank for card in selected}
+        if len(selected_ranks) != 1:
             failed = "、".join(card.code for card in selected)
             self.discard.append(self.drawn_card)
             self._finish_turn()
@@ -295,6 +297,7 @@ class CaboGame:
             ]
 
         rank = selected[0].rank
+        drawn_included = self.drawn_card.rank == rank and len(positions) < 4
         index_set = set(indices)
         remaining: list[Card] = []
         new_known: set[int] = set()
@@ -305,6 +308,28 @@ class CaboGame:
             remaining.append(card)
             if index in player.known_positions:
                 new_known.add(new_index)
+
+        if drawn_included:
+            player.cards = remaining
+            player.known_positions = new_known
+            self.discard.extend(selected)
+            self.discard.append(self.drawn_card)
+            self._finish_turn()
+            return [
+                f"{player.name} 配对成功，弃掉 {len(selected) + 1} 张 {rank}，"
+                f"剩余 {len(player.cards)} 张牌。"
+            ]
+
+        if len(positions) < 2:
+            failed = "、".join(card.code for card in selected)
+            self.discard.append(self.drawn_card)
+            self._finish_turn()
+            return [
+                f"{player.name} 配对失败：{failed} 与抽到的 "
+                f"{self.drawn_card.code} 不同点数，已展示并放回；"
+                "抽到的牌被弃掉。"
+            ]
+
         remaining.append(self.drawn_card)
         new_known.add(len(remaining) - 1)
         player.cards = remaining
