@@ -143,6 +143,12 @@ class CaboPlugin(Star):
             yield result
         event.stop_event()
 
+    @filter.command("配对", alias={"CABO配对", "弃同牌", "打对"})
+    async def match_command(self, event: AstrMessageEvent):
+        async for result in self._handle_command(event, "match"):
+            yield result
+        event.stop_event()
+
     @filter.command("看自己", alias={"CABO看自己"})
     async def peek_command(self, event: AstrMessageEvent):
         async for result in self._handle_command(event, "peek"):
@@ -233,6 +239,8 @@ class CaboPlugin(Star):
             return self._replace(group_id, user_id, self._message_text(event))
         if command == "discard":
             return self._discard(group_id, user_id)
+        if command == "match":
+            return self._match(group_id, user_id, self._message_text(event))
         if command == "peek":
             return self._peek(group_id, user_id, self._message_text(event))
         if command == "spy":
@@ -340,16 +348,25 @@ class CaboPlugin(Star):
             raise CaboError("当前没有 CABO 房间。")
         return self._action_outcome(group_id, game.discard_drawn(user_id))
 
+    def _match(self, group_id: str, user_id: str, text: str) -> CommandOutcome:
+        game = self.games.get(group_id)
+        if game is None:
+            raise CaboError("当前没有 CABO 房间。")
+        positions = self._parse_numbers(text)
+        if len(positions) < 2:
+            raise CaboError("格式错误，请发送“配对 1 2”或“配对 1 2 3”。")
+        return self._action_outcome(group_id, game.match_with_drawn(user_id, positions))
+
     def _peek(self, group_id: str, user_id: str, text: str) -> CommandOutcome:
         game = self.games.get(group_id)
         if game is None:
             raise CaboError("当前没有 CABO 房间。")
         position = self._parse_int(text, "看自己")
-        if not 1 <= position <= game.cards_per_player:
-            raise CaboError(f"牌位必须是 1-{game.cards_per_player}。")
         player = game.current_player
         if player is None or player.user_id != user_id:
             raise CaboError("还没有轮到你行动。")
+        if not 1 <= position <= len(player.cards):
+            raise CaboError(f"牌位必须是 1-{len(player.cards)}。")
         card = player.cards[position - 1]
         lines = game.peek_own(user_id, position)
         extra = [
@@ -365,9 +382,9 @@ class CaboPlugin(Star):
         if len(numbers) < 2:
             raise CaboError("格式错误，请发送“看别人 玩家编号 牌位”。")
         target_number, position = numbers[0], numbers[1]
-        if not 1 <= position <= game.cards_per_player:
-            raise CaboError(f"牌位必须是 1-{game.cards_per_player}。")
         target = game._player_by_number(target_number)
+        if not 1 <= position <= len(target.cards):
+            raise CaboError(f"牌位必须是 1-{len(target.cards)}。")
         card = target.cards[position - 1]
         lines = game.spy_opponent(user_id, target_number, position)
         extra = [
@@ -432,11 +449,13 @@ class CaboPlugin(Star):
             "1. 每人 4 张暗牌，开局自动知道第 1、2 张。\n"
             "2. 轮到你时抽牌堆或拿弃牌，或直接喊 CABO。\n"
             "3. 抽牌后可替换自己任意一张牌；拿弃牌必须替换。\n"
-            "4. 7/8 看自己，9/10 看别人，J/Q 交换任意两张桌上牌。\n"
-            "5. 喊 CABO 后其他玩家各获得最后一回合，随后摊牌。\n"
-            "6. 点数最低者获胜。K♦=0，其他 K=13，Q=12，J=11，A=1。\n"
+            "4. 抽牌后可选择 2-4 张同点数牌配对：用抽到的牌替换整组，手牌减少。\n"
+            "5. 7/8 看自己，9/10 看别人，J/Q 交换任意两张桌上牌。\n"
+            "6. 喊 CABO 后其他玩家各获得最后一回合，随后摊牌。\n"
+            "7. 点数最低者获胜。K♦=0，其他 K=13，Q=12，J=11，A=1。\n"
             "命令：CABO创建 / CABO加入 / CABO开始 / 抽牌 / 拿弃牌 / "
-            "换 1 / 弃牌 / 看自己 1 / 看别人 2 3 / 交换 1 1 2 2 / CABO叫牌"
+            "换 1 / 配对 1 2 / 弃牌 / 看自己 1 / 看别人 2 3 / "
+            "交换 1 1 2 2 / CABO叫牌"
         )
         return CommandOutcome(text=text, buttons=self._menu_buttons())
 

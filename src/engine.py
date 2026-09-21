@@ -229,7 +229,7 @@ class CaboGame:
             raise CaboError("弃牌堆为空，不能拿弃牌。")
         player = self.current_player
         assert player is not None
-        self.drawn_card = self.discard[-1]
+        self.drawn_card = self.discard.pop()
         self.drawn_from_discard = True
         self.phase = CaboPhase.DRAWN_DISCARD
         return [f"{player.name} 拿了弃牌堆的 {self.drawn_card.code}。"]
@@ -242,7 +242,7 @@ class CaboGame:
         player = self.current_player
         if player is None or player.user_id != user_id:
             raise CaboError("还没有轮到你行动。")
-        index = self._card_index(position)
+        index = self._card_index(position, player)
         assert self.drawn_card is not None
         old_card = player.cards[index]
         player.cards[index] = self.drawn_card
@@ -264,6 +264,58 @@ class CaboGame:
         self._finish_turn()
         return [f"{player.name} 弃掉了抽到的牌。"]
 
+    def match_with_drawn(self, user_id: str, positions: list[int]) -> list[str]:
+        """Use the drawn/discard card to replace a set of 2-4 matching cards.
+
+        Matching removes the selected face-down set and places the drawn card
+        into the layout, reducing the hand by ``len(positions) - 1`` cards.  A
+        failed match reveals and returns the selected cards, discards the
+        drawn card, and loses the turn.
+        """
+
+        if self.phase not in {CaboPhase.DRAWN_STOCK, CaboPhase.DRAWN_DISCARD}:
+            raise CaboError("当前没有可以配对的抽牌。")
+        player = self.current_player
+        if player is None or player.user_id != user_id:
+            raise CaboError("还没有轮到你行动。")
+        if not 2 <= len(positions) <= 4:
+            raise CaboError("配对需要选择 2-4 张牌。")
+        indices = [self._card_index(position, player) for position in positions]
+        if len(set(indices)) != len(indices):
+            raise CaboError("不能重复选择同一张牌。")
+        selected = [player.cards[index] for index in indices]
+        assert self.drawn_card is not None
+        if len({card.rank for card in selected}) != 1:
+            failed = "、".join(card.code for card in selected)
+            self.discard.append(self.drawn_card)
+            self._finish_turn()
+            return [
+                f"{player.name} 配对失败：{failed} 不是同点数，"
+                "已展示并放回；抽到的牌被弃掉。"
+            ]
+
+        rank = selected[0].rank
+        index_set = set(indices)
+        remaining: list[Card] = []
+        new_known: set[int] = set()
+        for index, card in enumerate(player.cards):
+            if index in index_set:
+                continue
+            new_index = len(remaining)
+            remaining.append(card)
+            if index in player.known_positions:
+                new_known.add(new_index)
+        remaining.append(self.drawn_card)
+        new_known.add(len(remaining) - 1)
+        player.cards = remaining
+        player.known_positions = new_known
+        self.discard.extend(selected)
+        self._finish_turn()
+        return [
+            f"{player.name} 配对成功，弃掉 {len(selected)} 张 {rank}，"
+            f"剩余 {len(player.cards)} 张牌。"
+        ]
+
     def peek_own(self, user_id: str, position: int) -> list[str]:
         """Use a 7/8 Peek power on one of the current player's cards."""
 
@@ -274,7 +326,7 @@ class CaboGame:
         player = self.current_player
         if player is None or player.user_id != user_id:
             raise CaboError("还没有轮到你行动。")
-        index = self._card_index(position)
+        index = self._card_index(position, player)
         player.known_positions.add(index)
         self.discard.append(self.drawn_card)
         self._finish_turn()
@@ -295,7 +347,7 @@ class CaboGame:
         target = self._player_by_number(target_player)
         if target.user_id == player.user_id:
             raise CaboError("请选择其他玩家。")
-        index = self._card_index(position)
+        index = self._card_index(position, target)
         _ = target.cards[index]  # validated by main for the private reveal
         self.discard.append(self.drawn_card)
         self._finish_turn()
@@ -320,8 +372,8 @@ class CaboGame:
             raise CaboError("还没有轮到你行动。")
         target_a = self._player_by_number(player_a)
         target_b = self._player_by_number(player_b)
-        index_a = self._card_index(position_a)
-        index_b = self._card_index(position_b)
+        index_a = self._card_index(position_a, target_a)
+        index_b = self._card_index(position_b, target_b)
         if target_a is target_b and index_a == index_b:
             raise CaboError("不能交换同一张牌。")
         target_a.cards[index_a], target_b.cards[index_b] = (
@@ -420,11 +472,11 @@ class CaboGame:
         self.phase = CaboPhase.TURN
         self.current_index = (self.current_index + 1) % len(self.players)
 
-    def _card_index(self, position: int) -> int:
-        """Convert a 1-based card position to a list index."""
+    def _card_index(self, position: int, player: PlayerState) -> int:
+        """Convert a 1-based card position to a list index for *player*."""
 
-        if not 1 <= int(position) <= self.cards_per_player:
-            raise CaboError(f"牌位必须是 1-{self.cards_per_player}。")
+        if not 1 <= int(position) <= len(player.cards):
+            raise CaboError(f"牌位必须是 1-{len(player.cards)}。")
         return int(position) - 1
 
     def _player_by_number(self, number: int) -> PlayerState:

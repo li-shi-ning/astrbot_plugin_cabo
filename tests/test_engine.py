@@ -156,3 +156,38 @@ def test_spy_power_and_discard_drawn_end_turn() -> None:
     game.discard_drawn(actor.user_id)
     assert game.phase == CaboPhase.TURN
     assert game.discard[-1].code == "2S"
+
+
+def test_matching_pair_replaces_set_with_drawn_card() -> None:
+    game = make_game()
+    actor = game.current_player
+    assert actor is not None
+    actor.cards = [card("AS"), card("AH"), card("2S"), card("3S")]
+    actor.known_positions = {0, 1}
+    game.drawn_card = card("5S")
+    game.phase = CaboPhase.DRAWN_STOCK
+
+    lines = game.match_with_drawn(actor.user_id, [1, 2])
+
+    assert "配对成功" in lines[0]
+    assert [item.code for item in actor.cards] == ["2S", "3S", "5S"]
+    assert actor.known_positions == {2}
+    assert game.discard[-2:] == [card("AS"), card("AH")]
+    assert game.phase == CaboPhase.TURN
+
+
+def test_failed_match_discards_drawn_card_and_loses_turn() -> None:
+    game = make_game()
+    actor = game.current_player
+    assert actor is not None
+    actor.cards = [card("AS"), card("2H"), card("3S"), card("4C")]
+    game.drawn_card = card("5S")
+    game.phase = CaboPhase.DRAWN_STOCK
+
+    lines = game.match_with_drawn(actor.user_id, [1, 2])
+
+    assert "配对失败" in lines[0]
+    assert [item.code for item in actor.cards] == ["AS", "2H", "3S", "4C"]
+    assert game.discard[-1].code == "5S"
+    assert game.phase == CaboPhase.TURN
+    assert game.current_player is not actor
