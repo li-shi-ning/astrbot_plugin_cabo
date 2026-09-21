@@ -1,0 +1,10 @@
+name: astrbot_plugin_cabo
+display_name: CABO 卡牌
+desc: QQ 官方群聊 CABO 卡牌游戏，支持创建房间、发牌、抽牌、看牌、交换、CABO 和结算。
+version: v1.0.0
+author: Codex
+repo: ""
+astrbot_version: ">=4.0.0"
+support_platforms:
+  - qq_official
+  - qq_official_webhook

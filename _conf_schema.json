@@ -1,0 +1,8 @@
+{
+  "max_players": {
+    "description": "每局最多玩家数。",
+    "type": "int",
+    "default": 4,
+    "hint": "CABO 支持 2-5 人，默认 4 人。"
+  }
+}
